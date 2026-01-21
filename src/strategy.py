@@ -120,63 +120,64 @@ class SeasonalETF:
         print("Seasonal Rankings Calculated.")
 
 
-    def run_backtest(self, initial_capital=10000):
-
+    def run_backtest(self, initial_capital=10000, transaction_cost=0.000):
         """
-        Simulates trading the Top 10 'Seasonal' stocks every month.
+        Phase 3: The Backtest Engine (Day 2 Update).
+        Now supports 'transaction_cost' to simulate slippage/fees.
+        0.1% per rebalance.
         """
-        print("\n--- Running Backtest Simulation ---")
+        print(f"\n--- Running Backtest (Cost: {transaction_cost*100}%) ---")
         
         # 1. Align Data
         monthly_prices = self.data.resample('BM').last()
         monthly_returns = monthly_prices.pct_change()
         
-        # 2. Create the Portfolio container
+        # 2. Portfolio Setup
         self.portfolio_history = pd.DataFrame(index=monthly_returns.index)
         self.portfolio_history['Total Value'] = initial_capital
         self.portfolio_history['Monthly Return'] = 0.0
         
-        # 3. The Strategy Loop
-        # start at index 12 to match seasonalikty calculations
         current_capital = initial_capital
         
-        # Iterate through
+        # 3. The Loop
         for i in range(12, len(monthly_returns) - 1):
             date = monthly_returns.index[i]
             next_date = monthly_returns.index[i+1]
             
-            # if not at start date then ignore
+            # Wait for start date
             if date < self.backtest_start:
                 continue
             
-            # Step A: Get the Rankings for THIS month
             if date not in self.persistence_scores.index:
                 continue
                 
             scores = self.persistence_scores.loc[date]
-            
-            # Step B: Select Top 10 Stocks
             top_10_tickers = scores.nlargest(10).index.tolist()
             
-            # Step C: Calculate Return for the NEXT month
+            # Calculate Raw Return (Gross)
             future_returns = monthly_returns.loc[next_date, top_10_tickers]
             portfolio_return = future_returns.mean()
             
             if np.isnan(portfolio_return):
                 portfolio_return = 0.0
             
-            # Step D: Update Portfolio Value
-            current_capital = current_capital * (1 + portfolio_return)
+            # 1. Grow the capital by the market return
+            gross_capital = current_capital * (1 + portfolio_return)
             
+            # 2. Account for transaction cost
+            # Conservative stress test
+            # Pay fee of total capital
+            current_capital = gross_capital * (1 - transaction_cost)
+            
+            # Log it
             self.portfolio_history.loc[next_date, 'Total Value'] = current_capital
             self.portfolio_history.loc[next_date, 'Monthly Return'] = portfolio_return
             
+        print("Backtest Complete.")
         
-        # Performance Summary
         total_return = (current_capital - initial_capital) / initial_capital
-        print(f"Initial Capital: ${initial_capital:,.2f}")
-        print(f"Final Capital:   ${current_capital:,.2f}")
-        print(f"Total Return:    {total_return*100:.2f}%")
+        print(f"Final Capital: ${current_capital:,.2f}")
+        print(f"Total Return:  {total_return*100:.2f}%")
         
         return self.portfolio_history
     
